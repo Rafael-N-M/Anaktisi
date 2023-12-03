@@ -1,2 +1,3 @@
-
 data/*
+sorted_inverted_index.csv
+sorted_inverted_index.json
