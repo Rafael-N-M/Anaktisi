@@ -1,115 +1,102 @@
 import os
-import re
+import json
 import math
-import numpy as np
-from collections import defaultdict
+import string
 
-# Function to read text from files in the 'data' folder
-def read_documents(folder):
-    documents = []
-    for filename in os.listdir(folder):
-        file_path = os.path.join(folder, filename)
-        with open(file_path, 'r') as file:
-            text = file.read()
-            documents.append(text)
-    return documents
+def custom_word_tokenize(text):
+    translator = str.maketrans('', '', string.punctuation.replace('-', ''))  # Removing punctuation except hyphens
+    text = text.translate(translator)
+    words = text.lower().split()
+    return words
 
-# Function to preprocess text
-def preprocess_text(text):
-    text = text.lower()
-    tokens = re.findall(r'\b\w+\b', text)
-    return tokens
+#Creating the Inverted Index
 
-# Function to create term frequency dictionary
-def create_term_frequency(documents):
-    term_frequency = defaultdict(lambda: defaultdict(int))
-    for idx, document in enumerate(documents):
-        tokens = preprocess_text(document)
-        for token in tokens:
-            term_frequency[idx][token] += 1
-    return term_frequency
-
-# Function to create document-term matrix
-def create_document_term_matrix(term_frequency, vocabulary):
-    doc_term_matrix = np.zeros((len(term_frequency), len(vocabulary)), dtype=int)
-    for doc_id, term_freq in term_frequency.items():
-        for term, freq in term_freq.items():
-            if term in vocabulary:
-                term_index = vocabulary.index(term)
-                doc_term_matrix[doc_id][term_index] = freq
-    return doc_term_matrix
-
-
-# Function to calculate TF-IDF
-def calculate_tfidf(doc_term_matrix):
-    doc_count = len(doc_term_matrix)
-    doc_with_term = np.sum((doc_term_matrix > 0).astype(int), axis=0)
-    idf = np.log(doc_count / (1 + doc_with_term))
-    tfidf_matrix = doc_term_matrix * idf
-    return tfidf_matrix
-
-# Function to calculate cosine similarity
-def cosine_similarity(query, docs):
-    similarities = np.dot(query, docs.T)
-    query_norm = np.linalg.norm(query, axis=1)
-    docs_norm = np.linalg.norm(docs, axis=1)
-    similarities /= np.outer(query_norm, docs_norm)
-    return similarities
-
-# Path to the 'data' folder containing documents
 data_folder = 'data'
+documents = {}
+inverted_index = {}
 
-# Read documents from the 'data' folder
-documents = read_documents(data_folder)
+# Read documents and create inverted index
+for filename in os.listdir(data_folder):
+    with open(os.path.join(data_folder, filename), 'r') as file:
+        doc_text = file.read().lower()
+        documents[filename] = doc_text
+        words = custom_word_tokenize(doc_text)
+        word_freq = {}
+        for word in words:
+            word_freq[word] = word_freq.get(word, 0) + 1
+        for word, freq in word_freq.items():
+            if word not in inverted_index:
+                inverted_index[word] = {}
+            inverted_index[word][filename] = freq
 
-# Read queries from file
-queries_file = 'Queries_20'
-with open(queries_file, 'r') as file:
-    queries = file.readlines()
-queries = [str(query).strip() for query in queries]
+# Store Inverted Index in a JSON File
+with open('inverted_index_custom.json', 'w') as file:
+    json.dump(inverted_index, file)
 
-# Concatenate documents and queries for term frequency calculation
-all_texts = documents + queries
+#Calculate TF-IDF Weights
 
-# Create term frequency dictionary
-term_freq = create_term_frequency(all_texts)
+N = len(documents)
+tfidf_weights = {}
 
-# Create vocabulary from term frequency
-vocabulary = list(set(term for doc in term_freq.values() for term in doc))
+for term, docs in inverted_index.items():
+    df = len(docs)
+    idf = math.log(N / df) if df > 0 else 0
+    tfidf_weights[term] = {}
+    for doc, freq in docs.items():
+        tfidf_weights[term][doc] = (1 + math.log(freq)) * idf
 
-# Create document-term matrix
-doc_term_matrix = create_document_term_matrix(term_freq, vocabulary)
+# Store TF-IDF Weights in a JSON File
+with open('tfidf_weights_custom.json', 'w') as file:
+    json.dump(tfidf_weights, file)
 
-# Calculate TF-IDF
-tfidf_matrix = calculate_tfidf(doc_term_matrix)
+# Compute Cosine Similarity for Queries
 
-# Process queries similarly
-query_term_freq = create_term_frequency(queries)
-query_vector = create_document_term_matrix(query_term_freq, vocabulary)
-query_tfidf = calculate_tfidf(query_vector)
+queries = [
+"What are the effects of calcium on the physical properties of mucus from CF patients",
+"Can one distinguish between the effects of mucus hypersecretion and infection on the submucosal glands of the respiratory tract in CF",
+"How are salivary glycoproteins from CF patients different from those of normal subjects",
+"What is the lipid composition of CF respiratory secretions",
+"Is CF mucus abnormal",
+"What is the effect of water or other therapeutic agents on the physical properties viscosity elasticity of sputum or bronchial secretions from CF patients",
+"Are mucus glycoproteins degraded differently in CF patients as compared to those from normal subjects",
+"What histochemical differences have been described between normal and CF respiratory epithelia",
+"What is the association between liver disease cirrhosis and vitamin A metabolism in CF",
+"What is the role of Vitamin E in the therapy of patients with CF",
+"What is the difference between meconium ileus and meconium plug syndrome",
+"What abnormalities of amino acid transport have been described in the small bowel of CF patients",
+"What are the clinical or biochemical features of pancreatitis in CF patients",
+"What non-invasive tests can be performed for the evaluation of exocrine pancreatic function in patients with CF",
+"What are the hepatic complications or manifestations of CF",
+"What are the gastrointestinal complications of CF after the neonatal period exclude liver disease and meconium ileus",
+"What is the most effective regimen for the use of pancreatic enzyme supplements in the treatment of CF patients",
+"Is dietary supplementation with bile salts of therapeutic benefit to CF patients",
+"What complications of pancreatic enzyme therapy have been reported in CF patients"
+]
 
-# Calculate Similarity Scores
-similarities = cosine_similarity(query_tfidf, tfidf_matrix)
+queries_similarities_top_10 = {}
 
-# Print relevant documents for each query
-for i, query in enumerate(queries):
-    print(f"Query: {query}")
-    sim_scores = similarities[i]
-    sorted_indices = np.argsort(sim_scores)[::-1]
-    for idx in sorted_indices:
-        print(f"Document {idx + 1}: {documents[idx]}")
-    print("\n")
+for query in queries:
+    query_words = custom_word_tokenize(query)
+    query_tfidf = {}
+    for word in query_words:
+        if word in inverted_index:
+            df = len(inverted_index[word])
+            idf = math.log(N / df) if df > 0 else 0
+            tf = (query_words.count(word) / len(query_words))
+            query_tfidf[word] = tf * idf
 
-# Define the output file for storing results
-output_file = 'query_results.txt'
+    similarities = {}
+    for doc_id, doc in documents.items():
+        dot_product = sum(query_tfidf[word] * tfidf_weights[word].get(doc_id, 0) for word in query_tfidf if doc_id in tfidf_weights[word])
+        query_magnitude = math.sqrt(sum(val ** 2 for val in query_tfidf.values()))
+        doc_magnitude = math.sqrt(sum(tfidf_weights[word].get(doc_id, 0) ** 2 for word in query_tfidf if doc_id in tfidf_weights[word]))
+        similarity = dot_product / (query_magnitude * doc_magnitude) if (query_magnitude * doc_magnitude) > 0 else 0
+        similarities[doc_id] = similarity
 
-# Open the output file in write mode
-with open(output_file, 'w') as file:
-    # Loop through queries and print relevant documents to the file
-    for i, query in enumerate(queries):
-        file.write(f"Query: {query}\n")
-        sim_scores = similarities[i]
-        sorted_indices = np.argsort(sim_scores)[::-1]
-        for idx in sorted_indices:
-            file.write(f"Document {idx + 1}: {documents[idx]}\n")
-        file.write("\n")
+    # Get top 10 similar documents for the current query
+    top_10 = {k: v for k, v in sorted(similarities.items(), key=lambda item: item[1], reverse=True)[:10]}
+    queries_similarities_top_10[query] = top_10
+
+# Save the top 10 similarities to a JSON file
+with open('queries_similarities_top_10.json', 'w') as file:
+    json.dump(queries_similarities_top_10, file, indent=4)
