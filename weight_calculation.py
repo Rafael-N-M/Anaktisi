@@ -3,7 +3,7 @@ import pandas as pd
 import math
 
 # Load data from the JSON file
-with open('sorted_inverted_index.json', 'r') as file:
+with open('sorted_inverted_index_pandas.json', 'r') as file:
     data = json.load(file)
 
 # Create a DataFrame from the loaded JSON data
